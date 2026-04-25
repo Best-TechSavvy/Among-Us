@@ -1,0 +1,83 @@
+/* style.css - Simple styling for Among Us IRL */
+
+body {
+  font-family: Arial, sans-serif;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: #f0f0f0;
+}
+
+#app {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+h1 {
+  text-align: center;
+  color: #333;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.hidden {
+  display: none;
+}
+
+input, button {
+  padding: 8px;
+  margin: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+button {
+  background-color: #4CAF50;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #45a049;
+}
+
+#error {
+  color: red;
+  background-color: #ffe6e6;
+  padding: 10px;
+  border-radius: 4px;
+  margin-top: 10px;
+}
+
+#players-list ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+#players-list li {
+  background-color: #f9f9f9;
+  margin: 5px 0;
+  padding: 5px;
+  border-radius: 4px;
+}
+
+#role-display {
+  font-size: 1.2em;
+  font-weight: bold;
+}
+
+#tasks-display ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+#tasks-display li {
+  background-color: #e7f3ff;
+  margin: 5px 0;
+  padding: 5px;
+  border-radius: 4px;
+}

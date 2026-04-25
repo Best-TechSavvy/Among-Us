@@ -1,0 +1,37 @@
+[
+  {
+    "taskId": "ece3de323be7b301",
+    "title": "Maze Task",
+    "instructions": "•\tPlayers trace a printed maze with their finger.\n•\tLetters are placed on corners and turns.\n•\tAs the player moves from start to end, they write down each letter they pass.\n•\tLetters in order form their code.",
+    "completionCode": "Winners",
+    "active": true
+  },
+  {
+    "taskId": "772d98d71340bcc1",
+    "title": "Wiring Task",
+    "instructions": "•\tA device (real or simulated) has 8 unlabeled pins, 4 LEDs, and 4 wires.\n•\tPlayer tries connecting the 4 wires into pins.\n•\tCorrect wire → correct LED lights.\n•\tWhen all 4 LEDs are lit, a code appears on the screen.",
+    "completionCode": "Wired",
+    "active": true
+  },
+  {
+    "taskId": "763f6bf47d480fb7",
+    "title": "Scavenger Hunt Task",
+    "instructions": "•\tPaper slip tells player to go to a starting location.\n•\tOn the wall there is a piece of paper with: \no\tThe first letter of the code\no\tA direction to the next location\n•\tPlayer follows directions to find 3–5 letters in order.",
+    "completionCode": "Hunted",
+    "active": true
+  },
+  {
+    "taskId": "a05dcc4f8be0c326",
+    "title": "Collaborative Story Writing Task",
+    "instructions": "•\tOn a table: a paper with the first 4 sentences of a story.\n•\tPlayer must add 4 sentences continuing the story.\n•\tStaff checks their sentences and gives the player a code.",
+    "completionCode": "stored",
+    "active": true
+  },
+  {
+    "taskId": "d9b4c067d3a1ee1b",
+    "title": "Encryption Task",
+    "instructions": "•\tPlayer uses given a number to encrypt the given a code with Caesar cipher, then uses the encrypted code to encrypt the previously given code with Vigenère cipher, the final encrypted message is the code.\n•\tDirection to use ciphers is on the table, location described in crewmate slip.",
+    "completionCode": "Cyber",
+    "active": true
+  }
+]
