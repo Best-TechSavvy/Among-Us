@@ -6,9 +6,10 @@ const socketIo = require('socket.io');
 const {
   gameState,
   createSession,
-  joinSession,
+  joinLobby,
   rejoinSession,
   hostReconnect,
+  kickPlayer,
   updateSettings,
   createTask,
   editTask,
@@ -29,6 +30,8 @@ const {
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+
+let announcements = [];
 
 app.use(express.static('public'));
 
@@ -53,31 +56,34 @@ io.on('connection', (socket) => {
     }
 
     const session = createSession(name.trim(), socket.id);
+    announcements = [];
     socket.isHost = true;
-    socket.join(gameState.sessionCode);
-    console.log(`[DEBUG] createSession success: session ${session.code}, host ${name}`);
-    socket.emit('sessionCreated', { code: session.code, hostToken: session.hostToken });
+    socket.join(gameState.lobbyName);
+    console.log(`[DEBUG] createSession success: lobby ${session.lobbyName}, host ${name}`);
+    socket.emit('sessionCreated', { lobbyName: session.lobbyName, hostToken: session.hostToken, sessionCode: gameState.sessionCode });
+    socket.emit('announcementList', { announcements });
     socket.emit('hostState', getGameStateForHost(socket.id));
   });
 
-  socket.on('joinSession', (data) => {
+  socket.on('joinLobby', (data) => {
     const { name, code } = data;
     if (!name || !code) {
-      socket.emit('error', 'Name and session code are required');
+      socket.emit('error', 'Name and lobby name are required');
       return;
     }
 
-    const result = joinSession(code, name.trim(), socket.id);
+    const result = joinLobby(code, name.trim(), socket.id);
     if (result.success) {
-      socket.join(gameState.sessionCode);
-      socket.emit('joined', { player: result.player, sessionCode: gameState.sessionCode });
+      socket.join(gameState.lobbyName);
+      socket.emit('joined', { player: result.player, lobbyName: gameState.lobbyName, sessionCode: gameState.sessionCode });
+      socket.emit('announcementList', { announcements });
       socket.emit('gameState', getGameStateForPlayer(socket.id));
-      io.to(gameState.sessionCode).emit('playersUpdated', { players: getPublicPlayers() });
+      io.to(gameState.lobbyName).emit('playersUpdated', { players: getPublicPlayers() });
       if (gameState.host.connected) {
         io.to(gameState.host.socketId).emit('hostState', getGameStateForHost(gameState.host.socketId));
       }
     } else {
-      console.log('[DEBUG] joinSession rejected:', result.message);
+      console.log('[DEBUG] joinLobby rejected:', result.message);
       socket.emit('error', result.message);
     }
   });
@@ -91,10 +97,11 @@ io.on('connection', (socket) => {
 
     const result = rejoinSession(code, playerId, socket.id);
     if (result.success) {
-      socket.join(gameState.sessionCode);
-      socket.emit('rejoined', { player: result.player, sessionCode: gameState.sessionCode });
+      socket.join(gameState.lobbyName);
+      socket.emit('rejoined', { player: result.player, lobbyName: gameState.lobbyName, sessionCode: gameState.sessionCode });
+      socket.emit('announcementList', { announcements });
       socket.emit('gameState', getGameStateForPlayer(socket.id));
-      io.to(gameState.sessionCode).emit('playersUpdated', { players: getPublicPlayers() });
+      io.to(gameState.lobbyName).emit('playersUpdated', { players: getPublicPlayers() });
       if (gameState.host.connected) {
         io.to(gameState.host.socketId).emit('hostState', getGameStateForHost(gameState.host.socketId));
       }
@@ -117,12 +124,14 @@ io.on('connection', (socket) => {
     const result = hostReconnect(hostToken, socket.id);
     if (result.success) {
       socket.isHost = true;
-      socket.join(gameState.sessionCode);
+      socket.join(gameState.lobbyName);
       console.log('[DEBUG] hostReconnect success for host token', hostToken);
-      socket.emit('hostReconnected', { sessionCode: gameState.sessionCode });
+      socket.emit('hostReconnected', { lobbyName: gameState.lobbyName, sessionCode: gameState.sessionCode });
+      socket.emit('announcementList', { announcements });
       socket.emit('hostState', getGameStateForHost(socket.id));
-      io.to(gameState.sessionCode).emit('playersUpdated', { players: getPublicPlayers() });
+      io.to(gameState.lobbyName).emit('playersUpdated', { players: getPublicPlayers() });
     } else {
+      console.log('[DEBUG] hostReconnect failed:', result.message);
       socket.emit('hostReconnectFailed', { message: result.message });
     }
   });
@@ -133,8 +142,8 @@ io.on('connection', (socket) => {
       return;
     }
     updateSettings(data);
-    io.to(gameState.sessionCode).emit('settingsUpdated', gameState.settings);
-    io.to(gameState.sessionCode).emit('playersUpdated', { players: getPublicPlayers() });
+    io.to(gameState.lobbyName).emit('settingsUpdated', gameState.settings);
+    io.to(gameState.lobbyName).emit('playersUpdated', { players: getPublicPlayers() });
     io.to(gameState.host.socketId).emit('hostState', getGameStateForHost(gameState.host.socketId));
   });
 
@@ -194,6 +203,27 @@ io.on('connection', (socket) => {
     socket.emit('taskBank', { taskBank: getTaskBank() });
   });
 
+  socket.on('sendAnnouncement', (data) => {
+    const { text } = data || {};
+    if (!isAuthorizedHost(socket)) {
+      console.log('[DEBUG] sendAnnouncement rejected: not host');
+      socket.emit('error', 'Only host can send announcements');
+      return;
+    }
+    if (!text || !text.trim()) {
+      socket.emit('error', 'Announcement text is required');
+      return;
+    }
+
+    const announcement = {
+      text: text.trim(),
+      timestamp: Date.now(),
+      senderLabel: 'HOST'
+    };
+    announcements.push(announcement);
+    io.to(gameState.lobbyName).emit('announcementPosted', announcement);
+  });
+
   socket.on('submitTaskCode', (data) => {
     const { taskId, completionCode } = data;
     const player = getPlayerBySocket(socket.id);
@@ -209,7 +239,7 @@ io.on('connection', (socket) => {
     }
 
     socket.emit('taskUpdated', { myTasks: result.myTasks, taskProgress: result.taskProgress });
-    io.to(gameState.sessionCode).emit('updateGlobalTaskProgress', result.taskProgress);
+    io.to(gameState.lobbyName).emit('updateGlobalTaskProgress', result.taskProgress);
     if (gameState.host.connected) {
       io.to(gameState.host.socketId).emit('updateHostTaskOverview', getGameStateForHost(gameState.host.socketId));
     }
@@ -227,7 +257,7 @@ io.on('connection', (socket) => {
           io.to(p.socketId).emit('gameStarted', getGameStateForPlayer(p.socketId));
         }
       });
-      io.to(gameState.sessionCode).emit('updateGlobalTaskProgress', progress);
+      io.to(gameState.lobbyName).emit('updateGlobalTaskProgress', progress);
       if (gameState.host.connected) {
         io.to(gameState.host.socketId).emit('hostState', getGameStateForHost(gameState.host.socketId));
       }
@@ -242,8 +272,8 @@ io.on('connection', (socket) => {
       return;
     }
     if (endGame()) {
-      io.to(gameState.sessionCode).emit('gameEnded', {
-        sessionCode: gameState.sessionCode,
+      io.to(gameState.lobbyName).emit('gameEnded', {
+        lobbyName: gameState.lobbyName,
         settings: {
           totalPlayers: gameState.settings.totalPlayers,
           imposters: gameState.settings.imposters,
@@ -266,15 +296,15 @@ io.on('connection', (socket) => {
       socket.emit('error', 'Only host can end the session');
       return;
     }
-    const sessionCode = gameState.sessionCode;
+    const lobbyName = gameState.lobbyName;
     if (!endSession()) {
       console.log('[DEBUG] endSession rejected: cannot end session');
       socket.emit('error', 'Cannot end session');
       return;
     }
-    if (sessionCode) {
-      io.to(sessionCode).emit('sessionEnded');
-      const room = io.sockets.adapter.rooms.get(sessionCode);
+    if (lobbyName) {
+      io.to(lobbyName).emit('sessionEnded');
+      const room = io.sockets.adapter.rooms.get(lobbyName);
       if (room) {
         [...room].forEach(socketId => {
           if (socketId === gameState.host.socketId) return;
@@ -285,8 +315,56 @@ io.on('connection', (socket) => {
         });
       }
     }
+    announcements = [];
     if (gameState.host.connected) {
       io.to(gameState.host.socketId).emit('hostState', getGameStateForHost(gameState.host.socketId));
+    }
+  });
+
+  socket.on('kickPlayer', (data) => {
+    if (!isAuthorizedHost(socket)) {
+      console.log('[DEBUG] kickPlayer rejected: not host');
+      socket.emit('error', 'Only host can kick players');
+      return;
+    }
+    const { playerId } = data;
+    if (!playerId) {
+      socket.emit('error', 'Player ID is required');
+      return;
+    }
+
+    const player = gameState.players.find(p => p.playerId === playerId);
+    if (!player) {
+      socket.emit('error', 'Player not found');
+      return;
+    }
+
+    console.log(`[DEBUG] Kicking player ${player.name} (${playerId})`);
+    const result = kickPlayer(playerId);
+    if (result.success) {
+      const kickedPlayerSocketId = player.socketId;
+      const progress = getGlobalTaskProgress();
+      
+      // Notify kicked player
+      if (kickedPlayerSocketId) {
+        const kickedSocket = io.sockets.sockets.get(kickedPlayerSocketId);
+        if (kickedSocket) {
+          kickedSocket.emit('kickedSelf', { message: 'You were removed from the lobby by the host' });
+          kickedSocket.leave(gameState.lobbyName);
+        }
+      }
+
+      // Update all remaining players
+      io.to(gameState.lobbyName).emit('playersUpdated', { players: getPublicPlayers() });
+      io.to(gameState.lobbyName).emit('updateGlobalTaskProgress', progress);
+
+      // Update host state
+      if (gameState.host.connected) {
+        io.to(gameState.host.socketId).emit('hostState', getGameStateForHost(gameState.host.socketId));
+      }
+    } else {
+      console.log('[DEBUG] kickPlayer failed:', result.message);
+      socket.emit('error', result.message);
     }
   });
 
@@ -295,14 +373,14 @@ io.on('connection', (socket) => {
     const host = getHostBySocket(socket.id);
     if (host) {
       gameState.host.connected = false;
-      io.to(gameState.sessionCode).emit('hostStatus', { connected: false });
+      io.to(gameState.lobbyName).emit('hostStatus', { connected: false });
       return;
     }
 
     const player = getPlayerBySocket(socket.id);
     if (player) {
       player.connected = false;
-      io.to(gameState.sessionCode).emit('playersUpdated', { players: getPublicPlayers() });
+      io.to(gameState.lobbyName).emit('playersUpdated', { players: getPublicPlayers() });
     }
   });
 });

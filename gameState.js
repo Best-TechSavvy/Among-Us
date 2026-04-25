@@ -44,6 +44,7 @@ function saveTaskBank() {
 }
 
 const gameState = {
+  lobbyName: null,
   sessionCode: null,
   phase: 'lobby',
   host: {
@@ -70,7 +71,8 @@ function generateToken() {
 }
 
 function createSession(hostName, socketId) {
-  gameState.sessionCode = generateSessionCode();
+  gameState.lobbyName = generateSessionCode();
+  gameState.sessionCode = generateToken();
   gameState.phase = 'lobby';
   gameState.host = {
     token: generateToken(),
@@ -80,18 +82,23 @@ function createSession(hostName, socketId) {
   };
   gameState.players = [];
   gameState.settings.totalPlayers = 4;
-  return { code: gameState.sessionCode, hostToken: gameState.host.token };
+  return { lobbyName: gameState.lobbyName, hostToken: gameState.host.token };
 }
 
-function joinSession(sessionCode, playerName, socketId) {
-  if (gameState.sessionCode !== sessionCode) {
-    return { success: false, message: 'Invalid session code' };
+function joinLobby(lobbyName, playerName, socketId) {
+  if (!gameState.lobbyName) {
+    console.log('[DEBUG] joinLobby failed: no active lobby');
+    return { success: false, message: 'No active lobby' };
+  }
+  if (gameState.lobbyName !== lobbyName) {
+    console.log(`[DEBUG] joinLobby failed: invalid lobby name ${lobbyName}, expected ${gameState.lobbyName}`);
+    return { success: false, message: 'Lobby not found' };
   }
   if (gameState.phase !== 'lobby') {
     return { success: false, message: 'Game already started' };
   }
   if (gameState.players.length >= 10) {
-    return { success: false, message: 'Session full' };
+    return { success: false, message: 'Lobby full' };
   }
   if (gameState.players.some(p => p.name === playerName)) {
     return { success: false, message: 'Name already taken' };
@@ -132,6 +139,16 @@ function hostReconnect(hostToken, socketId) {
   gameState.host.socketId = socketId;
   gameState.host.connected = true;
   return { success: true };
+}
+
+function kickPlayer(playerId) {
+  const playerIndex = gameState.players.findIndex(p => p.playerId === playerId);
+  if (playerIndex === -1) {
+    return { success: false, message: 'Player not found' };
+  }
+  const player = gameState.players[playerIndex];
+  gameState.players.splice(playerIndex, 1);
+  return { success: true, player };
 }
 
 function updateSettings(newSettings) {
@@ -291,6 +308,7 @@ function endGame() {
 
 function endSession() {
   if (!gameState.sessionCode) return false;
+  gameState.lobbyName = null;
   gameState.sessionCode = null;
   gameState.phase = 'lobby';
   gameState.host = {
@@ -362,6 +380,7 @@ function getGameStateForHost(socketId) {
   if (!host) return null;
 
   return {
+    lobbyName: gameState.lobbyName,
     sessionCode: gameState.sessionCode,
     phase: gameState.phase,
     host: {
@@ -388,9 +407,10 @@ function getGameStateForHost(socketId) {
 module.exports = {
   gameState,
   createSession,
-  joinSession,
+  joinLobby,
   rejoinSession,
   hostReconnect,
+  kickPlayer,
   updateSettings,
   createTask,
   editTask,

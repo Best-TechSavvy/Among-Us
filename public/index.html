@@ -12,26 +12,30 @@
 
     <!-- Create Session -->
     <div id="create-session" class="section">
-      <h2>Create New Session</h2>
+      <h2>Create New Lobby</h2>
       <input type="text" id="host-name" placeholder="Your Name" maxlength="20">
-      <button id="create-btn">Create Session</button>
-      <p id="session-code"></p>
+      <button id="create-btn">Create Lobby</button>
+      <p id="lobby-name-display"></p>
     </div>
 
     <!-- Join Session -->
     <div id="join-session" class="section">
-      <h2>Join Session</h2>
+      <h2>Join Lobby</h2>
       <input type="text" id="player-name" placeholder="Your Name" maxlength="20">
-      <input type="text" id="join-code" placeholder="Session Code" maxlength="6">
+      <input type="text" id="join-code" placeholder="Lobby Name" maxlength="6">
       <button id="join-btn">Join</button>
     </div>
 
     <!-- Lobby -->
     <div id="lobby" class="section hidden">
-      <h2>Lobby - Session: <span id="lobby-code"></span></h2>
+      <h2>Lobby - Name: <span id="lobby-code"></span></h2>
       <div id="players-list"></div>
       <div id="global-progress-lobby" class="hidden"></div>
       <div id="host-overview" class="hidden"></div>
+      <div id="announcement-panel" style="border: 1px solid #ccc; padding: 10px; margin: 10px 0; border-radius: 5px; background-color: #f9f9f9;">
+        <h3>Announcements</h3>
+        <div id="announcement-list" style="min-height: 100px; max-height: 180px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: white; border-radius: 3px;"></div>
+      </div>
       <div id="host-controls" class="hidden">
         <h3>Settings</h3>
         <label>Total Players: <input type="number" id="total-players" min="2" max="10" value="4"></label><br>
@@ -39,7 +43,7 @@
         <label>Tasks per Player: <input type="number" id="tasks-per-player" min="1" max="5" value="3"></label><br>
         <button id="start-game-btn">Start Game</button>
         <button id="end-game-btn">End Game</button>
-        <button id="end-session-btn">End Session</button>
+        <button id="end-session-btn">End Lobby</button>
         <h3>Task Bank Editor</h3>
         <div id="task-bank-list"></div>
         <h4>Create New Task</h4>
@@ -47,6 +51,9 @@
         <textarea id="task-instructions" placeholder="Task Instructions"></textarea><br>
         <input type="text" id="task-code" placeholder="Completion Code" maxlength="20"><br>
         <button id="create-task-btn">Create Task</button>
+        <h4>Post Announcement</h4>
+        <textarea id="announcement-text" placeholder="Announcement text" maxlength="200"></textarea><br>
+        <button id="announcement-send-btn">Send Announcement</button>
       </div>
     </div>
 
@@ -56,6 +63,10 @@
       <div id="role-display"></div>
       <div id="global-progress-game" class="hidden"></div>
       <div id="tasks-display"></div>
+      <div id="announcement-panel-game" style="border: 1px solid #ccc; padding: 10px; margin-top: 20px; border-radius: 5px; background-color: #f9f9f9;">
+        <h3>Announcements</h3>
+        <div id="announcement-list-game" style="min-height: 100px; max-height: 180px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: white; border-radius: 3px;"></div>
+      </div>
     </div>
 
     <!-- Error Messages -->

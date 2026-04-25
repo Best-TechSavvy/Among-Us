@@ -11,7 +11,7 @@ const errorDiv = document.getElementById('error');
 
 const hostNameInput = document.getElementById('host-name');
 const createBtn = document.getElementById('create-btn');
-const sessionCodeP = document.getElementById('session-code');
+const sessionCodeP = document.getElementById('lobby-name-display');
 
 const playerNameInput = document.getElementById('player-name');
 const joinCodeInput = document.getElementById('join-code');
@@ -35,12 +35,18 @@ const taskCodeInput = document.getElementById('task-code');
 const createTaskBtn = document.getElementById('create-task-btn');
 const taskBankListDiv = document.getElementById('task-bank-list');
 
+const announcementListDiv = document.getElementById('announcement-list');
+const announcementListGameDiv = document.getElementById('announcement-list-game');
+const announcementTextInput = document.getElementById('announcement-text');
+const announcementSendBtn = document.getElementById('announcement-send-btn');
+
 const roleDisplayDiv = document.getElementById('role-display');
 const tasksDisplayDiv = document.getElementById('tasks-display');
 
 // State
 let currentPlayer = null;
 let isHost = false;
+let isPlayerActive = false;
 
 function showSection(section) {
   [createSessionDiv, joinSessionDiv, lobbyDiv, gameDiv].forEach(div => div.classList.add('hidden'));
@@ -67,6 +73,7 @@ function showError(message) {
 function clearStoredIdentity() {
   localStorage.removeItem('playerId');
   localStorage.removeItem('hostToken');
+  localStorage.removeItem('lobbyName');
   localStorage.removeItem('sessionCode');
   currentPlayer = null;
   isHost = false;
@@ -107,12 +114,12 @@ function updateHostOverview(state) {
   console.log('Received hostState update', state);
   hostOverviewDiv.innerHTML = `
     <h3>Host Overview</h3>
-    <p>Session: ${state.sessionCode}</p>
+    <p>Lobby Name: ${state.lobbyName}</p>
     <p>Phase: ${state.phase}</p>
     <p>Settings: ${state.settings.totalPlayers} players, ${state.settings.imposters} imposters, ${state.settings.tasksPerPlayer} tasks each</p>
     <p>Global tasks completed: ${state.taskProgress.completed} / ${state.taskProgress.total}</p>
     <h4>Players</h4>
-    <ul>${state.players.map(p => `<li>${p.name} - ${p.role || 'unknown'} - ${p.active ? 'Active' : 'Inactive'} - ${p.connected ? 'connected' : 'disconnected'} - ${p.completedTasks}/${p.totalTasks} tasks</li>`).join('')}</ul>
+    <ul>${state.players.map(p => `<li>${p.name} - ${p.role || 'unknown'} - ${p.active ? 'Active' : 'Inactive'} - ${p.connected ? 'connected' : 'disconnected'} - ${p.completedTasks}/${p.totalTasks} tasks <button data-action="kick" data-player-id="${p.playerId}">Kick</button></li>`).join('')}</ul>
     <h4>Task Bank</h4>
     <ul>
       ${state.taskBank.map(t => `
@@ -183,10 +190,49 @@ function renderPlayerTasks(tasks) {
   });
 }
 
-function setSessionCode(code) {
+function setLobbyName(code) {
+  console.log('[DEBUG] setLobbyName called with:', code);
   lobbyCodeSpan.textContent = code;
-  sessionCodeP.textContent = `Session Code: ${code}`;
-  localStorage.setItem('sessionCode', code);
+  sessionCodeP.textContent = `Lobby Name: ${code}`;
+  localStorage.setItem('lobbyName', code);
+  console.log('[DEBUG] lobbyCodeSpan set to:', lobbyCodeSpan.textContent);
+}
+
+function updateAnnouncementInputState() {
+  const canSend = isHost;
+  if (!announcementTextInput || !announcementSendBtn) return;
+  announcementTextInput.disabled = !canSend;
+  announcementSendBtn.disabled = !canSend;
+}
+
+function renderAnnouncement(message, containerDiv) {
+  const msgEl = document.createElement('div');
+  msgEl.style.cssText = 'padding: 5px 0; border-bottom: 1px solid #eee; font-size: 0.95em;';
+  const sender = message.senderLabel || 'HOST';
+  const time = message.timestamp ? new Date(message.timestamp).toLocaleTimeString() : '';
+  msgEl.innerHTML = `<strong>${sender}</strong> ${time ? `<span style="color:#999;font-size:0.8em;">${time}</span>` : ''}<br><span>${message.text}</span>`;
+  containerDiv.appendChild(msgEl);
+  containerDiv.scrollTop = containerDiv.scrollHeight;
+}
+
+function renderAnnouncements(messages) {
+  if (announcementListDiv) announcementListDiv.innerHTML = '';
+  if (announcementListGameDiv) announcementListGameDiv.innerHTML = '';
+  if (!Array.isArray(messages)) return;
+  messages.forEach(message => {
+    if (announcementListDiv) renderAnnouncement(message, announcementListDiv);
+    if (announcementListGameDiv) renderAnnouncement(message, announcementListGameDiv);
+  });
+}
+
+function sendAnnouncement(text) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    showError('Announcement cannot be empty');
+    return;
+  }
+  socket.emit('sendAnnouncement', { text: trimmed });
+  announcementTextInput.value = '';
 }
 
 function applySettings(settings) {
@@ -208,10 +254,10 @@ joinBtn.addEventListener('click', () => {
   const name = playerNameInput.value.trim();
   const code = joinCodeInput.value.trim();
   if (!name || !code) {
-    showError('Please enter name and session code');
+    showError('Please enter name and lobby name');
     return;
   }
-  socket.emit('joinSession', { name, code });
+  socket.emit('joinLobby', { name, code });
 });
 
 startGameBtn.addEventListener('click', () => {
@@ -255,11 +301,25 @@ createTaskBtn.addEventListener('click', () => {
   taskCodeInput.value = '';
 });
 
+announcementSendBtn.addEventListener('click', () => {
+  if (!isHost) return;
+  sendAnnouncement(announcementTextInput.value);
+});
+
 hostOverviewDiv.addEventListener('click', (event) => {
-  const button = event.target.closest('button[data-task-action]');
-  if (!button) return;
-  const action = button.getAttribute('data-task-action');
-  const taskId = button.getAttribute('data-task-id');
+  const kickButton = event.target.closest('button[data-action="kick"]');
+  if (kickButton) {
+    const playerId = kickButton.getAttribute('data-player-id');
+    if (!playerId) return;
+    console.log('Kicking player:', playerId);
+    socket.emit('kickPlayer', { playerId });
+    return;
+  }
+
+  const taskButton = event.target.closest('button[data-task-action]');
+  if (!taskButton) return;
+  const action = taskButton.getAttribute('data-task-action');
+  const taskId = taskButton.getAttribute('data-task-id');
   if (!action || !taskId) return;
 
   if (action === 'delete') {
@@ -319,41 +379,55 @@ taskBankListDiv.addEventListener('click', (event) => {
 });
 
 socket.on('sessionCreated', (data) => {
+  console.log('[DEBUG] sessionCreated payload:', data);
   localStorage.setItem('hostToken', data.hostToken);
-  setSessionCode(data.code);
+  localStorage.setItem('sessionCode', data.sessionCode);
+  console.log('[DEBUG] setting lobbyName to:', data.lobbyName);
+  setLobbyName(data.lobbyName);
   currentPlayer = { role: 'host' };
   isHost = true;
+  isPlayerActive = false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.remove('hidden');
   hostOverviewDiv.classList.remove('hidden');
+  updateAnnouncementInputState();
   socket.emit('getTaskBank');
 });
 
 socket.on('joined', (data) => {
   localStorage.setItem('playerId', data.player.playerId);
+  localStorage.setItem('lobbyName', data.lobbyName);
   localStorage.setItem('sessionCode', data.sessionCode);
   currentPlayer = data.player;
   isHost = false;
+  isPlayerActive = data.player.active !== false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.add('hidden');
+  updateAnnouncementInputState();
 });
 
 socket.on('rejoined', (data) => {
   localStorage.setItem('playerId', data.player.playerId);
+  localStorage.setItem('lobbyName', data.lobbyName);
   localStorage.setItem('sessionCode', data.sessionCode);
   currentPlayer = data.player;
   isHost = false;
+  isPlayerActive = data.player.active !== false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.add('hidden');
+  updateAnnouncementInputState();
 });
 
 socket.on('hostReconnected', (data) => {
-  setSessionCode(data.sessionCode);
+  localStorage.setItem('sessionCode', data.sessionCode);
+  setLobbyName(data.lobbyName);
   currentPlayer = { role: 'host' };
   isHost = true;
+  isPlayerActive = false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.remove('hidden');
   hostOverviewDiv.classList.remove('hidden');
+  updateAnnouncementInputState();
   socket.emit('getTaskBank');
 });
 
@@ -386,7 +460,7 @@ socket.on('hostState', (state) => {
   updatePlayersList(state.players, true);
   hostOverviewDiv.classList.remove('hidden');
   hostControlsDiv.classList.remove('hidden');
-  setSessionCode(state.sessionCode);
+  setLobbyName(state.lobbyName);
   applySettings(state.settings);
   renderGlobalProgress(state.taskProgress);
   updateHostOverview(state);
@@ -395,6 +469,15 @@ socket.on('hostState', (state) => {
 socket.on('taskBank', (data) => {
   console.log('Received task bank update', data);
   renderTaskBank(data.taskBank);
+});
+
+socket.on('announcementList', (data) => {
+  renderAnnouncements(data.announcements || []);
+});
+
+socket.on('announcementPosted', (message) => {
+  renderAnnouncement(message, announcementListDiv);
+  renderAnnouncement(message, announcementListGameDiv);
 });
 
 socket.on('gameEnded', (data) => {
@@ -407,7 +490,8 @@ socket.on('gameEnded', (data) => {
 socket.on('sessionEnded', () => {
   clearStoredIdentity();
   showLanding();
-  showError('Session Ended');
+  renderAnnouncements([]);
+  showError('Lobby Ended');
 });
 
 socket.on('playersUpdated', (data) => {
@@ -458,6 +542,12 @@ socket.on('hostReconnectFailed', (data) => {
 
 socket.on('error', (message) => {
   showError(message);
+});
+
+socket.on('kickedSelf', (data) => {
+  clearStoredIdentity();
+  showLanding();
+  showError(data.message);
 });
 
 function tryReconnect() {
