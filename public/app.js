@@ -2,11 +2,13 @@
 
 const socket = io();
 
-// DOM elements
+// --- DOM refs ---
 const createSessionDiv = document.getElementById('create-session');
 const joinSessionDiv = document.getElementById('join-session');
 const lobbyDiv = document.getElementById('lobby');
 const gameDiv = document.getElementById('game');
+const meetingDiv = document.getElementById('meeting');
+const gameOverDiv = document.getElementById('game-over');
 const errorDiv = document.getElementById('error');
 
 const hostNameInput = document.getElementById('host-name');
@@ -41,25 +43,54 @@ const announcementTextInput = document.getElementById('announcement-text');
 const announcementSendBtn = document.getElementById('announcement-send-btn');
 
 const roleDisplayDiv = document.getElementById('role-display');
+const aliveStatusDiv = document.getElementById('alive-status');
 const tasksDisplayDiv = document.getElementById('tasks-display');
+const meetingBtnContainer = document.getElementById('meeting-btn-container');
+const callMeetingBtn = document.getElementById('call-meeting-btn');
+const hostGameControlsDiv = document.getElementById('host-game-controls');
+const hostGameOverviewDiv = document.getElementById('host-game-overview');
+const forceResolveBtn = document.getElementById('force-resolve-btn');
 
-// State
+const meetingHeader = document.getElementById('meeting-header');
+const votingArea = document.getElementById('voting-area');
+const voteStatusDisplay = document.getElementById('vote-status-display');
+const meetingResultsDiv = document.getElementById('meeting-results');
+const hostMeetingControls = document.getElementById('host-meeting-controls');
+const forceResolveMeetingBtn = document.getElementById('force-resolve-meeting-btn');
+
+const gameOverContent = document.getElementById('game-over-content');
+const hostGameoverControls = document.getElementById('host-gameover-controls');
+const playAgainBtn = document.getElementById('play-again-btn');
+const endSessionBtn3 = document.getElementById('end-session-btn-3');
+
+const endGameBtn2 = document.getElementById('end-game-btn-2');
+const endSessionBtn2 = document.getElementById('end-session-btn-2');
+
+// --- State ---
 let currentPlayer = null;
 let isHost = false;
-let isPlayerActive = false;
+let myVote = null; // track local vote for UI
+
+// --- Section management ---
+const ALL_SECTIONS = [createSessionDiv, joinSessionDiv, lobbyDiv, gameDiv, meetingDiv, gameOverDiv];
 
 function showSection(section) {
-  [createSessionDiv, joinSessionDiv, lobbyDiv, gameDiv].forEach(div => div.classList.add('hidden'));
-  section.classList.remove('hidden');
+  ALL_SECTIONS.forEach(div => div.classList.add('hidden'));
+  if (Array.isArray(section)) {
+    section.forEach(s => s.classList.remove('hidden'));
+  } else {
+    section.classList.remove('hidden');
+  }
 }
 
 function showLanding() {
+  ALL_SECTIONS.forEach(div => div.classList.add('hidden'));
   createSessionDiv.classList.remove('hidden');
   joinSessionDiv.classList.remove('hidden');
-  lobbyDiv.classList.add('hidden');
-  gameDiv.classList.add('hidden');
+  // Reset host-specific UI
   hostControlsDiv.classList.add('hidden');
   hostOverviewDiv.classList.add('hidden');
+  hostGameControlsDiv.classList.add('hidden');
   globalProgressLobbyDiv.classList.add('hidden');
   globalProgressGameDiv.classList.add('hidden');
 }
@@ -79,63 +110,97 @@ function clearStoredIdentity() {
   isHost = false;
 }
 
+// --- Players list ---
 function updatePlayersList(players, includeDetails = false) {
   if (!players || players.length === 0) {
     playersListDiv.innerHTML = '<p>No players yet</p>';
     return;
   }
   const items = players.map(p => {
+    const dotClass = !p.connected ? 'dot-disconnected' : (!p.alive ? 'dot-dead' : 'dot-connected');
+    let label = p.name;
     if (includeDetails) {
-      const status = p.connected ? 'connected' : 'disconnected';
-      const activeState = p.active ? 'Active' : 'Inactive';
-      const role = p.role ? ` (${p.role})` : '';
-      return `<li>${p.name}${role} - ${activeState} - ${status}</li>`;
+      const tags = [];
+      if (p.role) tags.push(`<em>${p.role}</em>`);
+      if (!p.alive) tags.push('<span style="color:#888">💀 Dead</span>');
+      if (!p.connected) tags.push('<span style="color:#e94560">⚡ Disconnected</span>');
+      if (p.completedTasks !== undefined) tags.push(`${p.completedTasks}/${p.totalTasks} tasks`);
+      if (p.playerId && isHost) {
+        tags.push(`<button data-action="kick" data-player-id="${p.playerId}" style="padding:2px 8px;font-size:0.75em;background:#555;">Kick</button>`);
+      }
+      if (tags.length) label += ' — ' + tags.join(' ');
     }
-    return `<li>${p.name}</li>`;
+    return `<li><span class="player-dot ${dotClass}"></span>${label}</li>`;
   });
-  playersListDiv.innerHTML = '<h3>Players:</h3><ul>' + items.join('') + '</ul>';
+  playersListDiv.innerHTML = '<h3>Players (' + players.length + ')</h3><ul>' + items.join('') + '</ul>';
 }
 
-function renderGlobalProgress(progress) {
+// --- Progress bar ---
+function renderGlobalProgress(progress, containerDiv) {
   if (!progress || typeof progress.completed !== 'number') {
-    globalProgressLobbyDiv.classList.add('hidden');
-    globalProgressGameDiv.classList.add('hidden');
+    containerDiv.classList.add('hidden');
     return;
   }
-  const html = `<p>Global tasks completed: ${progress.completed} / ${progress.total}</p>`;
-  globalProgressLobbyDiv.innerHTML = html;
-  globalProgressGameDiv.innerHTML = html;
-  globalProgressLobbyDiv.classList.remove('hidden');
-  globalProgressGameDiv.classList.remove('hidden');
+  const pct = progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
+  containerDiv.innerHTML = `
+    <div>Tasks: ${progress.completed} / ${progress.total} (${pct}%)</div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" style="width:${pct}%"></div>
+    </div>
+  `;
+  containerDiv.classList.remove('hidden');
 }
 
+function updateAllProgress(progress) {
+  renderGlobalProgress(progress, globalProgressLobbyDiv);
+  renderGlobalProgress(progress, globalProgressGameDiv);
+}
+
+// --- Host overview ---
 function updateHostOverview(state) {
   if (!state) return;
-  console.log('Received hostState update', state);
   hostOverviewDiv.innerHTML = `
     <h3>Host Overview</h3>
-    <p>Lobby Name: ${state.lobbyName}</p>
-    <p>Phase: ${state.phase}</p>
-    <p>Settings: ${state.settings.totalPlayers} players, ${state.settings.imposters} imposters, ${state.settings.tasksPerPlayer} tasks each</p>
-    <p>Global tasks completed: ${state.taskProgress.completed} / ${state.taskProgress.total}</p>
+    <p>Lobby: <strong>${state.lobbyName}</strong> &nbsp;|&nbsp; Phase: <strong>${state.phase}</strong></p>
     <h4>Players</h4>
-    <ul>${state.players.map(p => `<li>${p.name} - ${p.role || 'unknown'} - ${p.active ? 'Active' : 'Inactive'} - ${p.connected ? 'connected' : 'disconnected'} - ${p.completedTasks}/${p.totalTasks} tasks <button data-action="kick" data-player-id="${p.playerId}">Kick</button></li>`).join('')}</ul>
-    <h4>Task Bank</h4>
     <ul>
-      ${state.taskBank.map(t => `
+      ${state.players.map(p => `
         <li>
-          <strong>${t.title}</strong>: ${t.instructions}
-          <div style="margin-top:5px;font-size:0.9em;color:#666;">
-            Code: <code>${t.completionCode || '(none)'}</code>
-          </div>
-          ${t.active ? '' : '<em>(inactive)</em>'}
-          <button data-task-action="edit" data-task-id="${t.taskId}">Edit</button>
-          <button data-task-action="delete" data-task-id="${t.taskId}">Delete</button>
+          <span class="player-dot ${p.connected ? (p.alive ? 'dot-connected' : 'dot-dead') : 'dot-disconnected'}"></span>
+          <strong>${p.name}</strong>
+          ${p.role ? `<em style="color:${p.role === 'imposter' ? '#e94560' : '#06d6a0'}">(${p.role})</em>` : ''}
+          ${!p.alive ? '<span style="color:#888">💀</span>' : ''}
+          ${p.totalTasks > 0 ? `${p.completedTasks}/${p.totalTasks} tasks` : ''}
+          ${!p.connected ? '<span style="color:#e94560;font-size:0.8em">disconnected</span>' : ''}
+          <button data-action="kick" data-player-id="${p.playerId}" style="background:#555;">Kick</button>
         </li>
       `).join('')}
     </ul>
+    ${state.meeting ? `
+    <h4>Meeting in progress</h4>
+    <p>Called by: ${state.meeting.calledByName} — ${state.meeting.voteStatus.totalVoted}/${state.meeting.voteStatus.totalVoters} voted</p>
+    ` : ''}
   `;
   renderTaskBank(state.taskBank);
+}
+
+function updateHostGameOverview(state) {
+  if (!state || !hostGameOverviewDiv) return;
+  hostGameOverviewDiv.innerHTML = `
+    <h4>Player Status</h4>
+    <table>
+      <tr><th>Name</th><th>Role</th><th>Status</th><th>Tasks</th><th>Connected</th></tr>
+      ${state.players.map(p => `
+        <tr>
+          <td>${p.name}</td>
+          <td style="color:${p.role === 'imposter' ? '#e94560' : '#06d6a0'}">${p.role || '—'}</td>
+          <td>${p.alive ? '✅ Alive' : '💀 Dead'}</td>
+          <td>${p.totalTasks > 0 ? `${p.completedTasks}/${p.totalTasks}` : '—'}</td>
+          <td>${p.connected ? '🟢' : '🔴'}</td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
 }
 
 function renderTaskBank(taskBank) {
@@ -143,34 +208,34 @@ function renderTaskBank(taskBank) {
     taskBankListDiv.innerHTML = '<p>No tasks in bank yet.</p>';
     return;
   }
-  taskBankListDiv.innerHTML = '<h4>Existing Tasks</h4><ul>' + taskBank.map(t => `
+  taskBankListDiv.innerHTML = '<ul>' + taskBank.map(t => `
     <li>
-      <strong>${t.title}</strong>: ${t.instructions}
-      <div style="margin-top:5px;font-size:0.9em;color:#666;">
-        Code: <code>${t.completionCode || '(none)'}</code>
-      </div>
-      ${t.active ? '' : '<em>(inactive)</em>'}
-      <button data-task-action="edit" data-task-id="${t.taskId}">Edit</button>
-      <button data-task-action="delete" data-task-id="${t.taskId}">Delete</button>
+      <strong>${t.title}</strong>${!t.active ? ' <em style="color:#888">(inactive)</em>' : ''}
+      <div style="font-size:0.85em;color:#aaa;margin:4px 0;">${t.instructions}</div>
+      <div style="font-size:0.85em;color:#888;">Code: <code>${t.completionCode || '(none)'}</code></div>
+      <button data-task-action="edit" data-task-id="${t.taskId}" style="background:#0f3460;">Edit</button>
+      <button data-task-action="delete" data-task-id="${t.taskId}" style="background:#555;">Delete</button>
     </li>
   `).join('') + '</ul>';
 }
 
+// --- Player tasks ---
 function renderPlayerTasks(tasks) {
   if (!tasks || tasks.length === 0) {
-    tasksDisplayDiv.innerHTML = '<p>No tasks assigned yet.</p>';
+    tasksDisplayDiv.innerHTML = '<p>No tasks assigned.</p>';
     return;
   }
-
   tasksDisplayDiv.innerHTML = '<h3>Your Tasks</h3>' + tasks.map(task => {
-    const status = task.completed ? 'Completed' : 'Active';
-    const inputDisabled = task.completed ? 'disabled' : '';
+    const done = task.completed;
     return `
-      <div class="task-item">
+      <div class="task-item ${done ? 'completed' : ''}">
         <h4>${task.title}</h4>
         <p>${task.instructions}</p>
-        <p>Status: ${status}</p>
-        ${task.completed ? '' : `<input type="text" id="task-code-${task.taskId}" placeholder="Enter completion code"><button data-task-id="${task.taskId}">Submit</button>`}
+        <p class="task-status ${done ? 'done' : 'pending'}">${done ? '✅ Completed' : '⏳ Pending'}</p>
+        ${done ? '' : `
+          <input type="text" id="task-code-${task.taskId}" placeholder="Enter completion code">
+          <button data-task-id="${task.taskId}">Submit</button>
+        `}
       </div>
     `;
   }).join('');
@@ -181,36 +246,19 @@ function renderPlayerTasks(tasks) {
       const input = document.getElementById(`task-code-${taskId}`);
       if (!input) return;
       const completionCode = input.value.trim();
-      if (!completionCode) {
-        showError('Please enter the completion code');
-        return;
-      }
+      if (!completionCode) { showError('Please enter the completion code'); return; }
       socket.emit('submitTaskCode', { taskId, completionCode });
     });
   });
 }
 
-function setLobbyName(code) {
-  console.log('[DEBUG] setLobbyName called with:', code);
-  lobbyCodeSpan.textContent = code;
-  sessionCodeP.textContent = `Lobby Name: ${code}`;
-  localStorage.setItem('lobbyName', code);
-  console.log('[DEBUG] lobbyCodeSpan set to:', lobbyCodeSpan.textContent);
-}
-
-function updateAnnouncementInputState() {
-  const canSend = isHost;
-  if (!announcementTextInput || !announcementSendBtn) return;
-  announcementTextInput.disabled = !canSend;
-  announcementSendBtn.disabled = !canSend;
-}
-
+// --- Announcements ---
 function renderAnnouncement(message, containerDiv) {
+  if (!containerDiv) return;
   const msgEl = document.createElement('div');
-  msgEl.style.cssText = 'padding: 5px 0; border-bottom: 1px solid #eee; font-size: 0.95em;';
-  const sender = message.senderLabel || 'HOST';
+  msgEl.className = 'announcement-item';
   const time = message.timestamp ? new Date(message.timestamp).toLocaleTimeString() : '';
-  msgEl.innerHTML = `<strong>${sender}</strong> ${time ? `<span style="color:#999;font-size:0.8em;">${time}</span>` : ''}<br><span>${message.text}</span>`;
+  msgEl.innerHTML = `<span class="announcement-sender">${message.senderLabel || 'HOST'}</span><span class="announcement-time">${time}</span><br><span>${message.text}</span>`;
   containerDiv.appendChild(msgEl);
   containerDiv.scrollTop = containerDiv.scrollHeight;
 }
@@ -219,128 +267,261 @@ function renderAnnouncements(messages) {
   if (announcementListDiv) announcementListDiv.innerHTML = '';
   if (announcementListGameDiv) announcementListGameDiv.innerHTML = '';
   if (!Array.isArray(messages)) return;
-  messages.forEach(message => {
-    if (announcementListDiv) renderAnnouncement(message, announcementListDiv);
-    if (announcementListGameDiv) renderAnnouncement(message, announcementListGameDiv);
+  messages.forEach(msg => {
+    renderAnnouncement(msg, announcementListDiv);
+    renderAnnouncement(msg, announcementListGameDiv);
   });
 }
 
-function sendAnnouncement(text) {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    showError('Announcement cannot be empty');
-    return;
-  }
-  socket.emit('sendAnnouncement', { text: trimmed });
-  announcementTextInput.value = '';
+// --- Helpers ---
+function setLobbyName(code) {
+  if (lobbyCodeSpan) lobbyCodeSpan.textContent = code;
+  if (sessionCodeP) sessionCodeP.textContent = `Lobby Name: ${code}`;
+  localStorage.setItem('lobbyName', code);
 }
 
 function applySettings(settings) {
-  totalPlayersInput.value = settings.totalPlayers;
-  impostersInput.value = settings.imposters;
-  tasksPerPlayerInput.value = settings.tasksPerPlayer;
+  if (totalPlayersInput) totalPlayersInput.value = settings.totalPlayers;
+  if (impostersInput) impostersInput.value = settings.imposters;
+  if (tasksPerPlayerInput) tasksPerPlayerInput.value = settings.tasksPerPlayer;
 }
+
+function updateAnnouncementInputState() {
+  if (announcementTextInput) announcementTextInput.disabled = !isHost;
+  if (announcementSendBtn) announcementSendBtn.disabled = !isHost;
+}
+
+// --- Voting / Meeting ---
+function showMeetingScreen(data, isVotingOpen) {
+  showSection(meetingDiv);
+  myVote = data.myVote || null;
+
+  meetingHeader.innerHTML = `
+    <h2>🚨 Emergency Meeting</h2>
+    <p>Called by <strong>${data.calledByName}</strong></p>
+  `;
+
+  meetingResultsDiv.classList.add('hidden');
+
+  if (isVotingOpen) {
+    renderVotingUI(data.players);
+  }
+
+  if (data.voteStatus) renderVoteStatus(data.voteStatus);
+
+  // Host controls during meeting
+  if (isHost) {
+    hostMeetingControls.classList.remove('hidden');
+  }
+}
+
+function renderVotingUI(players) {
+  const alivePlayers = players.filter(p => p.alive);
+
+  votingArea.innerHTML = `<h3>Vote to eject a player (or skip):</h3>
+  <div class="vote-grid">
+    ${alivePlayers.map(p => {
+      // Don't show the current player as a vote option (can't vote yourself in most rulesets)
+      const isMe = currentPlayer && p.playerId === currentPlayer.playerId;
+      const selected = myVote === p.playerId ? 'selected' : '';
+      return `<button class="vote-btn ${selected}" data-vote-target="${p.playerId}" ${isMe ? 'style="border-color:#555;opacity:0.7"' : ''}>${isMe ? '👤 ' : ''}${p.name}</button>`;
+    }).join('')}
+    <button class="vote-btn skip-btn ${myVote === 'skip' ? 'selected' : ''}" data-vote-target="skip">⏭ Skip</button>
+  </div>`;
+
+  if (myVote) {
+    votingArea.querySelectorAll('.vote-btn').forEach(btn => btn.disabled = true);
+  } else {
+    votingArea.querySelectorAll('.vote-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-vote-target');
+        myVote = target;
+        socket.emit('castVote', { targetId: target });
+        // Disable all vote buttons after voting
+        votingArea.querySelectorAll('.vote-btn').forEach(b => b.disabled = true);
+        votingArea.querySelectorAll('.vote-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+      });
+    });
+  }
+}
+
+function renderVoteStatus(voteStatus) {
+  voteStatusDisplay.textContent = `Votes cast: ${voteStatus.totalVoted} / ${voteStatus.totalVoters}`;
+}
+
+function showMeetingResults(data) {
+  votingArea.innerHTML = '';
+  voteStatusDisplay.textContent = '';
+  hostMeetingControls.classList.add('hidden');
+
+  meetingResultsDiv.classList.remove('hidden');
+  const ejected = data.ejectedPlayer;
+
+  let resultHTML = '';
+  if (ejected) {
+    const wasImposter = ejected.role === 'imposter';
+    resultHTML = `
+      <h3>🚀 ${ejected.name} was ejected!</h3>
+      <p style="color:${wasImposter ? '#e94560' : '#06d6a0'};font-weight:700;font-size:1.2em;">
+        ${ejected.name} was ${wasImposter ? 'an Imposter 😈' : 'NOT an Imposter 😇'}
+      </p>
+    `;
+  } else {
+    resultHTML = `<h3>No one was ejected (skip or tie)</h3>`;
+  }
+
+  // Show vote breakdown
+  const voteCounts = data.voteCounts || {};
+  const voteLines = Object.entries(voteCounts).map(([targetId, count]) => {
+    if (targetId === 'skip') return `Skip: ${count} vote(s)`;
+    const target = data.players ? data.players.find(p => p.playerId === targetId) : null;
+    return `${target ? target.name : 'Unknown'}: ${count} vote(s)`;
+  });
+  if (voteLines.length) {
+    resultHTML += `<p style="font-size:0.85em;color:#aaa;">${voteLines.join(' | ')}</p>`;
+  }
+
+  resultHTML += `<p style="color:#888;font-size:0.9em;margin-top:12px;">Returning to game...</p>`;
+  meetingResultsDiv.innerHTML = resultHTML;
+
+  // Auto-return to game after 4 seconds
+  setTimeout(() => {
+    meetingDiv.classList.add('hidden');
+    gameDiv.classList.remove('hidden');
+    myVote = null;
+  }, 4000);
+}
+
+function showGameOver(data) {
+  showSection(gameOverDiv);
+  myVote = null;
+
+  const isCrewWin = data.winner === 'crewmates';
+  const winClass = isCrewWin ? 'win-crewmates' : 'win-imposters';
+  const winEmoji = isCrewWin ? '🎉' : '😈';
+  const winTitle = isCrewWin ? 'Crewmates Win!' : 'Imposters Win!';
+
+  const playerList = (data.players || []).map(p => {
+    const roleClass = p.role === 'imposter' ? 'reveal-imposter' : 'reveal-crewmate';
+    const deadClass = !p.alive ? 'reveal-dead' : '';
+    const deadIcon = !p.alive ? ' 💀' : '';
+    return `<li class="${roleClass} ${deadClass}">${p.name}${deadIcon} (${p.role})</li>`;
+  }).join('');
+
+  gameOverContent.innerHTML = `
+    <div class="${winClass}">
+      <h2>${winEmoji} ${winTitle}</h2>
+      <p class="game-over-reason">${data.reason}</p>
+      <ul class="reveal-list">${playerList}</ul>
+    </div>
+  `;
+
+  if (isHost) {
+    hostGameoverControls.classList.remove('hidden');
+  } else {
+    hostGameoverControls.classList.add('hidden');
+  }
+}
+
+// --- Event listeners ---
 
 createBtn.addEventListener('click', () => {
   const name = hostNameInput.value.trim();
-  if (!name) {
-    showError('Please enter your name');
-    return;
-  }
+  if (!name) { showError('Please enter your name'); return; }
   socket.emit('createSession', { name });
 });
 
 joinBtn.addEventListener('click', () => {
   const name = playerNameInput.value.trim();
   const code = joinCodeInput.value.trim();
-  if (!name || !code) {
-    showError('Please enter name and lobby name');
-    return;
-  }
+  if (!name || !code) { showError('Please enter name and lobby name'); return; }
   socket.emit('joinLobby', { name, code });
 });
 
-startGameBtn.addEventListener('click', () => {
-  socket.emit('startGame');
-});
+startGameBtn.addEventListener('click', () => socket.emit('startGame'));
 
 endGameBtn.addEventListener('click', () => {
-  console.log('End Game button clicked');
-  if (!isHost) {
-    showError('Only host can end the game');
-    return;
-  }
+  if (!isHost) { showError('Only host can end the game'); return; }
+  socket.emit('endGame');
+});
+if (endGameBtn2) endGameBtn2.addEventListener('click', () => {
+  if (!isHost) return;
   socket.emit('endGame');
 });
 
 endSessionBtn.addEventListener('click', () => {
-  console.log('End Session button clicked');
-  if (!isHost) {
-    showError('Only host can end the session');
-    return;
-  }
+  if (!isHost) { showError('Only host can end the session'); return; }
+  socket.emit('endSession');
+});
+if (endSessionBtn2) endSessionBtn2.addEventListener('click', () => {
+  if (!isHost) return;
+  socket.emit('endSession');
+});
+if (endSessionBtn3) endSessionBtn3.addEventListener('click', () => {
+  if (!isHost) return;
   socket.emit('endSession');
 });
 
+if (playAgainBtn) playAgainBtn.addEventListener('click', () => socket.emit('endGame'));
+
 createTaskBtn.addEventListener('click', () => {
-  if (!isHost) {
-    showError('Only host can create tasks');
-    return;
-  }
+  if (!isHost) { showError('Only host can create tasks'); return; }
   const title = taskTitleInput.value.trim();
   const instructions = taskInstructionsInput.value.trim();
   const completionCode = taskCodeInput.value.trim();
-  if (!title || !instructions || !completionCode) {
-    showError('All task fields are required');
-    return;
-  }
-  console.log('Creating task:', title, instructions, completionCode);
+  if (!title || !instructions || !completionCode) { showError('All task fields are required'); return; }
   socket.emit('createTask', { title, instructions, completionCode });
   taskTitleInput.value = '';
   taskInstructionsInput.value = '';
   taskCodeInput.value = '';
 });
 
-announcementSendBtn.addEventListener('click', () => {
-  if (!isHost) return;
-  sendAnnouncement(announcementTextInput.value);
-});
+if (announcementSendBtn) {
+  announcementSendBtn.addEventListener('click', () => {
+    if (!isHost) return;
+    const text = announcementTextInput.value.trim();
+    if (!text) { showError('Announcement cannot be empty'); return; }
+    socket.emit('sendAnnouncement', { text });
+    announcementTextInput.value = '';
+  });
+}
 
+if (callMeetingBtn) {
+  callMeetingBtn.addEventListener('click', () => {
+    socket.emit('callMeeting');
+  });
+}
+
+if (forceResolveBtn) {
+  forceResolveBtn.addEventListener('click', () => socket.emit('forceResolveVoting'));
+}
+if (forceResolveMeetingBtn) {
+  forceResolveMeetingBtn.addEventListener('click', () => socket.emit('forceResolveVoting'));
+}
+
+// Host overview delegation (kick, edit task, delete task)
 hostOverviewDiv.addEventListener('click', (event) => {
-  const kickButton = event.target.closest('button[data-action="kick"]');
-  if (kickButton) {
-    const playerId = kickButton.getAttribute('data-player-id');
-    if (!playerId) return;
-    console.log('Kicking player:', playerId);
-    socket.emit('kickPlayer', { playerId });
+  const kickBtn = event.target.closest('button[data-action="kick"]');
+  if (kickBtn) {
+    const playerId = kickBtn.getAttribute('data-player-id');
+    if (playerId) socket.emit('kickPlayer', { playerId });
     return;
   }
+  handleTaskButtonClick(event);
+});
 
-  const taskButton = event.target.closest('button[data-task-action]');
-  if (!taskButton) return;
-  const action = taskButton.getAttribute('data-task-action');
-  const taskId = taskButton.getAttribute('data-task-id');
-  if (!action || !taskId) return;
+taskBankListDiv.addEventListener('click', handleTaskButtonClick);
 
-  if (action === 'delete') {
-    console.log('Deleting task from host overview:', taskId);
-    socket.emit('deleteTask', { taskId });
-    return;
-  }
-
-  if (action === 'edit') {
-    const title = prompt('New task title:');
-    if (title === null) return;
-    const instructions = prompt('New task instructions:');
-    if (instructions === null) return;
-    const completionCode = prompt('New completion code:');
-    if (completionCode === null) return;
-    console.log('Editing task from host overview:', taskId, title, instructions, completionCode);
-    socket.emit('editTask', { taskId, title, instructions, completionCode });
+playersListDiv.addEventListener('click', (event) => {
+  const kickBtn = event.target.closest('button[data-action="kick"]');
+  if (kickBtn) {
+    const playerId = kickBtn.getAttribute('data-player-id');
+    if (playerId) socket.emit('kickPlayer', { playerId });
   }
 });
 
-taskBankListDiv.addEventListener('click', (event) => {
+function handleTaskButtonClick(event) {
   const button = event.target.closest('button[data-task-action]');
   if (!button) return;
   const action = button.getAttribute('data-task-action');
@@ -348,26 +529,22 @@ taskBankListDiv.addEventListener('click', (event) => {
   if (!action || !taskId) return;
 
   if (action === 'delete') {
-    console.log('Deleting task:', taskId);
     socket.emit('deleteTask', { taskId });
     return;
   }
-
   if (action === 'edit') {
-    const taskInOverride = taskBankListDiv.textContent;
     const title = prompt('New task title:');
     if (title === null) return;
     const instructions = prompt('New task instructions:');
     if (instructions === null) return;
     const completionCode = prompt('New completion code:');
     if (completionCode === null) return;
-    console.log('Editing task from task bank:', taskId, title, instructions, completionCode);
     socket.emit('editTask', { taskId, title, instructions, completionCode });
   }
-});
+}
 
 [totalPlayersInput, impostersInput, tasksPerPlayerInput].forEach(input => {
-  input.addEventListener('change', () => {
+  if (input) input.addEventListener('change', () => {
     if (isHost) {
       socket.emit('updateSettings', {
         totalPlayers: parseInt(totalPlayersInput.value, 10),
@@ -378,15 +555,14 @@ taskBankListDiv.addEventListener('click', (event) => {
   });
 });
 
+// --- Socket events ---
+
 socket.on('sessionCreated', (data) => {
-  console.log('[DEBUG] sessionCreated payload:', data);
   localStorage.setItem('hostToken', data.hostToken);
   localStorage.setItem('sessionCode', data.sessionCode);
-  console.log('[DEBUG] setting lobbyName to:', data.lobbyName);
   setLobbyName(data.lobbyName);
   currentPlayer = { role: 'host' };
   isHost = true;
-  isPlayerActive = false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.remove('hidden');
   hostOverviewDiv.classList.remove('hidden');
@@ -400,9 +576,9 @@ socket.on('joined', (data) => {
   localStorage.setItem('sessionCode', data.sessionCode);
   currentPlayer = data.player;
   isHost = false;
-  isPlayerActive = data.player.active !== false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.add('hidden');
+  hostOverviewDiv.classList.add('hidden');
   updateAnnouncementInputState();
 });
 
@@ -412,7 +588,6 @@ socket.on('rejoined', (data) => {
   localStorage.setItem('sessionCode', data.sessionCode);
   currentPlayer = data.player;
   isHost = false;
-  isPlayerActive = data.player.active !== false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.add('hidden');
   updateAnnouncementInputState();
@@ -423,7 +598,6 @@ socket.on('hostReconnected', (data) => {
   setLobbyName(data.lobbyName);
   currentPlayer = { role: 'host' };
   isHost = true;
-  isPlayerActive = false;
   showSection(lobbyDiv);
   hostControlsDiv.classList.remove('hidden');
   hostOverviewDiv.classList.remove('hidden');
@@ -432,42 +606,126 @@ socket.on('hostReconnected', (data) => {
 });
 
 socket.on('gameState', (state) => {
-  console.log('Received gameState', state);
   if (state.phase === 'lobby') {
     showSection(lobbyDiv);
     updatePlayersList(state.players);
+    applySettings(state.settings);
+    updateAllProgress(state.taskProgress);
     if (isHost) {
       hostControlsDiv.classList.remove('hidden');
       hostOverviewDiv.classList.remove('hidden');
     }
-    applySettings(state.settings);
-    renderGlobalProgress(state.taskProgress);
   } else if (state.phase === 'running') {
     showSection(gameDiv);
-    roleDisplayDiv.innerHTML = `<h3>Your Role: ${state.myRole}</h3>`;
-    if (state.myRole === 'crewmate') {
-      renderPlayerTasks(state.myTasks);
-    } else {
-      tasksDisplayDiv.innerHTML = '<p>As imposter, you have no tasks. Sabotage the crew!</p>';
-    }
-    renderGlobalProgress(state.taskProgress);
+    renderGameView(state);
+  } else if (state.phase === 'meeting') {
+    showMeetingScreen({
+      calledByName: state.meeting ? state.meeting.calledByName : '?',
+      players: state.players,
+      myVote: state.meeting ? state.meeting.myVote : null,
+      voteStatus: state.meeting ? state.meeting.voteStatus : null
+    }, true);
   }
 });
 
 socket.on('hostState', (state) => {
-  console.log('Received hostState', state);
-  showSection(lobbyDiv);
-  updatePlayersList(state.players, true);
-  hostOverviewDiv.classList.remove('hidden');
-  hostControlsDiv.classList.remove('hidden');
+  if (!state) return;
   setLobbyName(state.lobbyName);
   applySettings(state.settings);
-  renderGlobalProgress(state.taskProgress);
+  updateAllProgress(state.taskProgress);
   updateHostOverview(state);
+
+  if (state.phase === 'lobby') {
+    showSection(lobbyDiv);
+    updatePlayersList(state.players, true);
+    hostOverviewDiv.classList.remove('hidden');
+    hostControlsDiv.classList.remove('hidden');
+    hostGameControlsDiv.classList.add('hidden');
+  } else if (state.phase === 'running') {
+    showSection(gameDiv);
+    updatePlayersList(state.players, true);
+    hostGameControlsDiv.classList.remove('hidden');
+    updateHostGameOverview(state);
+    if (forceResolveBtn) forceResolveBtn.classList.add('hidden');
+  } else if (state.phase === 'meeting') {
+    // Host stays in game view but sees meeting controls
+    hostGameControlsDiv.classList.remove('hidden');
+    if (forceResolveBtn) forceResolveBtn.classList.remove('hidden');
+    updateHostGameOverview(state);
+  }
+});
+
+socket.on('gameStarted', (state) => {
+  showSection(gameDiv);
+  renderGameView(state);
+  if (isHost) {
+    hostGameControlsDiv.classList.remove('hidden');
+  }
+});
+
+function renderGameView(state) {
+  // Role display
+  roleDisplayDiv.className = 'role-display ' + (state.myRole === 'imposter' ? 'role-imposter' : 'role-crewmate');
+  const roleEmoji = state.myRole === 'imposter' ? '😈' : '👨‍🚀';
+  roleDisplayDiv.innerHTML = `${roleEmoji} You are: <strong>${state.myRole ? state.myRole.toUpperCase() : '?'}</strong>`;
+
+  // Alive status
+  if (state.myAlive === false) {
+    aliveStatusDiv.className = 'status-dead';
+    aliveStatusDiv.textContent = '💀 You are dead. You can observe but not interact.';
+  } else {
+    aliveStatusDiv.className = 'status-alive';
+    aliveStatusDiv.textContent = '✅ Alive';
+  }
+
+  // Tasks
+  if (state.myRole === 'crewmate') {
+    renderPlayerTasks(state.myTasks);
+  } else {
+    tasksDisplayDiv.innerHTML = '<p style="color:#e94560;font-weight:700;">You are an Imposter. Eliminate the crewmates without being caught!</p>';
+  }
+
+  // Meeting button — only alive non-imposters (or you can allow imposters too, game design choice)
+  if (state.myAlive !== false && state.myRole) {
+    meetingBtnContainer.classList.remove('hidden');
+  } else {
+    meetingBtnContainer.classList.add('hidden');
+  }
+
+  updateAllProgress(state.taskProgress);
+  updatePlayersList(state.players);
+}
+
+socket.on('meetingCalled', (data) => {
+  myVote = data.myVote || null;
+  showMeetingScreen(data, true);
+});
+
+socket.on('voteCast', (data) => {
+  myVote = data.targetId;
+  // Disable vote buttons
+  votingArea.querySelectorAll('.vote-btn').forEach(btn => {
+    btn.disabled = true;
+    if (btn.getAttribute('data-vote-target') === data.targetId) btn.classList.add('selected');
+    else btn.classList.remove('selected');
+  });
+});
+
+socket.on('voteStatusUpdated', (voteStatus) => {
+  renderVoteStatus(voteStatus);
+});
+
+socket.on('meetingResolved', (data) => {
+  showMeetingResults(data);
+  // Update player list with new alive statuses
+  if (data.players) updatePlayersList(data.players);
+});
+
+socket.on('gameOver', (data) => {
+  showGameOver(data);
 });
 
 socket.on('taskBank', (data) => {
-  console.log('Received task bank update', data);
   renderTaskBank(data.taskBank);
 });
 
@@ -481,9 +739,22 @@ socket.on('announcementPosted', (message) => {
 });
 
 socket.on('gameEnded', (data) => {
+  // Clear game state
+  tasksDisplayDiv.innerHTML = '';
+  roleDisplayDiv.innerHTML = '';
+  aliveStatusDiv.innerHTML = '';
+  meetingBtnContainer.classList.add('hidden');
+  hostGameControlsDiv.classList.add('hidden');
+  myVote = null;
+
   showSection(lobbyDiv);
   updatePlayersList(data.players);
-  renderGlobalProgress(data.taskProgress || { completed: 0, total: 0 });
+  updateAllProgress(data.taskProgress || { completed: 0, total: 0 });
+
+  if (isHost) {
+    hostControlsDiv.classList.remove('hidden');
+    hostOverviewDiv.classList.remove('hidden');
+  }
   showError('Game ended. Players returned to lobby.');
 });
 
@@ -491,7 +762,7 @@ socket.on('sessionEnded', () => {
   clearStoredIdentity();
   showLanding();
   renderAnnouncements([]);
-  showError('Lobby Ended');
+  showError('Lobby ended.');
 });
 
 socket.on('playersUpdated', (data) => {
@@ -502,30 +773,18 @@ socket.on('settingsUpdated', (settings) => {
   applySettings(settings);
 });
 
-socket.on('gameStarted', (state) => {
-  showSection(gameDiv);
-  roleDisplayDiv.innerHTML = `<h3>Your Role: ${state.myRole}</h3>`;
-  if (state.myRole === 'crewmate') {
-    renderPlayerTasks(state.myTasks);
-  } else {
-    tasksDisplayDiv.innerHTML = '<p>As imposter, you have no tasks. Sabotage the crew!</p>';
-  }
-  renderGlobalProgress(state.taskProgress);
-});
-
 socket.on('taskUpdated', (data) => {
-  if (data.myTasks) {
-    renderPlayerTasks(data.myTasks);
-  }
-  renderGlobalProgress(data.taskProgress);
+  if (data.myTasks) renderPlayerTasks(data.myTasks);
+  updateAllProgress(data.taskProgress);
 });
 
 socket.on('updateGlobalTaskProgress', (progress) => {
-  renderGlobalProgress(progress);
+  updateAllProgress(progress);
 });
 
 socket.on('updateHostTaskOverview', (state) => {
   updateHostOverview(state);
+  updateHostGameOverview(state);
 });
 
 socket.on('rejoinFailed', (data) => {
@@ -550,6 +809,7 @@ socket.on('kickedSelf', (data) => {
   showError(data.message);
 });
 
+// --- Reconnect on load ---
 function tryReconnect() {
   const playerId = localStorage.getItem('playerId');
   const hostToken = localStorage.getItem('hostToken');
@@ -559,7 +819,6 @@ function tryReconnect() {
     socket.emit('hostReconnect', { hostToken, code: sessionCode });
     return;
   }
-
   if (playerId && sessionCode) {
     socket.emit('rejoinSession', { playerId, code: sessionCode });
   }

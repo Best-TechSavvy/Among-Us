@@ -8,7 +8,10 @@
 </head>
 <body>
   <div id="app">
-    <h1>Among Us IRL</h1>
+    <h1>🚀 Among Us IRL</h1>
+
+    <!-- Error Messages -->
+    <div id="error" class="hidden"></div>
 
     <!-- Create Session -->
     <div id="create-session" class="section">
@@ -28,49 +31,96 @@
 
     <!-- Lobby -->
     <div id="lobby" class="section hidden">
-      <h2>Lobby - Name: <span id="lobby-code"></span></h2>
+      <h2>Lobby — <span id="lobby-code"></span></h2>
       <div id="players-list"></div>
-      <div id="global-progress-lobby" class="hidden"></div>
-      <div id="host-overview" class="hidden"></div>
-      <div id="announcement-panel" style="border: 1px solid #ccc; padding: 10px; margin: 10px 0; border-radius: 5px; background-color: #f9f9f9;">
-        <h3>Announcements</h3>
-        <div id="announcement-list" style="min-height: 100px; max-height: 180px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: white; border-radius: 3px;"></div>
+      <div id="global-progress-lobby" class="hidden progress-bar-container"></div>
+
+      <!-- Announcements (lobby) -->
+      <div class="announcement-panel">
+        <h3>📢 Announcements</h3>
+        <div id="announcement-list" class="announcement-list"></div>
       </div>
+
+      <div id="host-overview" class="hidden"></div>
+
+      <!-- Host Controls -->
       <div id="host-controls" class="hidden">
-        <h3>Settings</h3>
-        <label>Total Players: <input type="number" id="total-players" min="2" max="10" value="4"></label><br>
-        <label>Imposters: <input type="number" id="imposters" min="1" max="3" value="1"></label><br>
-        <label>Tasks per Player: <input type="number" id="tasks-per-player" min="1" max="5" value="3"></label><br>
-        <button id="start-game-btn">Start Game</button>
-        <button id="end-game-btn">End Game</button>
-        <button id="end-session-btn">End Lobby</button>
-        <h3>Task Bank Editor</h3>
+        <h3>⚙️ Settings</h3>
+        <div class="settings-grid">
+          <label>Total Players: <input type="number" id="total-players" min="2" max="10" value="4"></label>
+          <label>Imposters: <input type="number" id="imposters" min="1" max="3" value="1"></label>
+          <label>Tasks per Player: <input type="number" id="tasks-per-player" min="1" max="5" value="3"></label>
+        </div>
+        <div class="button-row">
+          <button id="start-game-btn" class="btn-primary">▶ Start Game</button>
+          <button id="end-game-btn" class="btn-danger">⏹ End Game</button>
+          <button id="end-session-btn" class="btn-danger">✖ End Lobby</button>
+        </div>
+
+        <h3>📋 Task Bank</h3>
         <div id="task-bank-list"></div>
         <h4>Create New Task</h4>
         <input type="text" id="task-title" placeholder="Task Title" maxlength="50"><br>
-        <textarea id="task-instructions" placeholder="Task Instructions"></textarea><br>
+        <textarea id="task-instructions" placeholder="Task Instructions" rows="3"></textarea><br>
         <input type="text" id="task-code" placeholder="Completion Code" maxlength="20"><br>
-        <button id="create-task-btn">Create Task</button>
-        <h4>Post Announcement</h4>
-        <textarea id="announcement-text" placeholder="Announcement text" maxlength="200"></textarea><br>
-        <button id="announcement-send-btn">Send Announcement</button>
+        <button id="create-task-btn">+ Create Task</button>
+
+        <h4>📣 Post Announcement</h4>
+        <textarea id="announcement-text" placeholder="Announcement text" maxlength="200" rows="2"></textarea><br>
+        <button id="announcement-send-btn">Send</button>
       </div>
     </div>
 
     <!-- Game -->
     <div id="game" class="section hidden">
-      <h2>Game Started</h2>
       <div id="role-display"></div>
-      <div id="global-progress-game" class="hidden"></div>
+      <div id="alive-status"></div>
+      <div id="global-progress-game" class="hidden progress-bar-container"></div>
       <div id="tasks-display"></div>
-      <div id="announcement-panel-game" style="border: 1px solid #ccc; padding: 10px; margin-top: 20px; border-radius: 5px; background-color: #f9f9f9;">
-        <h3>Announcements</h3>
-        <div id="announcement-list-game" style="min-height: 100px; max-height: 180px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: white; border-radius: 3px;"></div>
+
+      <!-- Call Meeting Button (crewmates and alive players) -->
+      <div id="meeting-btn-container" class="hidden">
+        <button id="call-meeting-btn" class="btn-warning">🚨 Call Emergency Meeting</button>
+      </div>
+
+      <!-- Announcements (game) -->
+      <div class="announcement-panel">
+        <h3>📢 Announcements</h3>
+        <div id="announcement-list-game" class="announcement-list"></div>
+      </div>
+
+      <!-- Host game controls -->
+      <div id="host-game-controls" class="hidden">
+        <div class="button-row">
+          <button id="end-game-btn-2" class="btn-danger">⏹ End Game</button>
+          <button id="end-session-btn-2" class="btn-danger">✖ End Lobby</button>
+          <button id="force-resolve-btn" class="btn-warning hidden">⚡ Force Resolve Voting</button>
+        </div>
+        <div id="host-game-overview"></div>
       </div>
     </div>
 
-    <!-- Error Messages -->
-    <div id="error" class="hidden"></div>
+    <!-- Meeting / Voting Phase -->
+    <div id="meeting" class="section hidden">
+      <div id="meeting-header"></div>
+      <div id="voting-area"></div>
+      <div id="vote-status-display"></div>
+      <div id="meeting-results" class="hidden"></div>
+      <!-- Host force-resolve during meeting -->
+      <div id="host-meeting-controls" class="hidden">
+        <button id="force-resolve-meeting-btn" class="btn-warning">⚡ Force Resolve Voting</button>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over" class="section hidden">
+      <div id="game-over-content"></div>
+      <div id="host-gameover-controls" class="hidden">
+        <button id="play-again-btn" class="btn-primary">🔄 Play Again</button>
+        <button id="end-session-btn-3" class="btn-danger">✖ End Lobby</button>
+      </div>
+    </div>
+
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
