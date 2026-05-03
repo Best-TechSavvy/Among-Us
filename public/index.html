@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Among Us IRL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <h1>🚀 Among Us IRL</h1>
+  <div id="error" class="hidden"></div>
+
+  <!-- ── Landing ── -->
+  <div id="create-session" class="section">
+    <h2>Create Lobby</h2>
+    <input type="text" id="host-name" placeholder="Your Name" maxlength="20">
+    <button id="create-btn">Create Lobby</button>
+    <p id="lobby-name-display"></p>
+  </div>
+
+  <div id="join-session" class="section">
+    <h2>Join Lobby</h2>
+    <input type="text" id="player-name" placeholder="Your Name" maxlength="20">
+    <input type="text" id="join-code" placeholder="Lobby Name" maxlength="6">
+    <button id="join-btn">Join</button>
+  </div>
+
+  <div id="projector-join-section" class="section">
+    <h2>📽 Projector</h2>
+    <input type="text" id="projector-token-input" placeholder="Projector Code" maxlength="20">
+    <button id="projector-join-btn">Connect Projector</button>
+  </div>
+
+  <!-- ── Lobby ── -->
+  <div id="lobby" class="section hidden">
+    <h2>Lobby — <span id="lobby-code"></span></h2>
+    <div id="players-list"></div>
+    <div id="global-progress-lobby" class="hidden progress-bar-container"></div>
+
+    <div class="announcement-panel">
+      <h3>📢 Announcements</h3>
+      <div id="announcement-list" class="announcement-list"></div>
+    </div>
+
+    <div id="host-overview" class="hidden"></div>
+
+    <div id="host-controls" class="hidden">
+      <h3>⚙️ Settings</h3>
+      <div class="settings-grid">
+        <label>Total Players<input type="number" id="total-players" min="2" max="10" value="4"></label>
+        <label>Imposters<input type="number" id="imposters" min="1" max="3" value="1"></label>
+        <label>Tasks / Player<input type="number" id="tasks-per-player" min="1" max="5" value="3"></label>
+        <label>Voting Seconds<input type="number" id="voting-duration" min="10" max="300" value="60"></label>
+      </div>
+      <div class="button-row">
+        <button id="start-game-btn" class="btn-primary">▶ Start Game</button>
+        <button id="end-game-btn" class="btn-danger">⏹ End Game</button>
+        <button id="end-session-btn" class="btn-danger">✖ End Lobby</button>
+      </div>
+
+      <div id="projector-token-display"></div>
+
+      <h3>📋 Task Bank</h3>
+      <div id="task-bank-list"></div>
+      <h4>Create New Task</h4>
+      <input type="text" id="task-title" placeholder="Task Title" maxlength="50"><br>
+      <textarea id="task-instructions" placeholder="Task Instructions" rows="3"></textarea><br>
+      <input type="text" id="task-code" placeholder="Completion Code" maxlength="20"><br>
+      <button id="create-task-btn">+ Create Task</button>
+
+      <h4>📣 Post Announcement</h4>
+      <textarea id="announcement-text" placeholder="Announcement text" maxlength="200" rows="2"></textarea><br>
+      <button id="announcement-send-btn">Send</button>
+    </div>
+  </div>
+
+  <!-- ── Game (player view) ── -->
+  <div id="game" class="section hidden">
+    <div id="role-display"></div>
+    <div id="alive-status"></div>
+    <div id="global-progress-game" class="hidden progress-bar-container"></div>
+    <div id="tasks-display"></div>
+
+    <!-- Report dead body button -->
+    <div id="report-btn-container" class="hidden">
+      <button id="report-btn" class="btn-danger">🔴 Report Dead Body</button>
+    </div>
+
+    <div class="announcement-panel">
+      <h3>📢 Announcements</h3>
+      <div id="announcement-list-game" class="announcement-list"></div>
+    </div>
+
+    <!-- Host in-game controls -->
+    <div id="host-game-controls" class="hidden">
+      <div class="button-row">
+        <button id="end-game-btn-2" class="btn-danger">⏹ End Game</button>
+        <button id="end-session-btn-2" class="btn-danger">✖ End Lobby</button>
+      </div>
+      <div id="host-game-overview"></div>
+    </div>
+  </div>
+
+  <!-- ── Report body modal ── -->
+  <div id="report-modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>🔴 Report Dead Body</h3>
+      <p>Select the player you found dead:</p>
+      <div id="report-player-list"></div>
+      <button id="report-cancel-btn" class="btn-skip">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ── Meeting: Gathering phase ── -->
+  <div id="meeting" class="section hidden">
+    <div id="meeting-header"></div>
+
+    <!-- Gathering sub-phase -->
+    <div id="gathering-area">
+      <h3>🚶 Make your way to the meeting table!</h3>
+      <p id="gathering-instruction">Tap the button below once you arrive.</p>
+      <button id="confirm-arrival-btn" class="btn-primary">✅ I'm Here</button>
+      <div id="arrival-checklist"></div>
+
+      <!-- Host start-voting button -->
+      <div id="host-start-voting-area" class="hidden">
+        <button id="start-voting-btn" class="btn-warning">🗳 Start Voting</button>
+      </div>
+    </div>
+
+    <!-- Voting sub-phase -->
+    <div id="voting-area" class="hidden">
+      <div id="voting-timer-display"></div>
+      <div id="vote-grid"></div>
+      <div id="vote-status-display"></div>
+      <div id="host-force-resolve" class="hidden">
+        <button id="force-resolve-btn" class="btn-warning">⚡ Force Resolve</button>
+      </div>
+    </div>
+
+    <!-- Results sub-phase (shown inside meeting before returning to game) -->
+    <div id="meeting-results" class="hidden"></div>
+  </div>
+
+  <!-- ── Projector view ── -->
+  <div id="projector-view" class="section hidden">
+    <div id="proj-header"></div>
+    <div id="proj-phase-banner"></div>
+    <div id="proj-players"></div>
+    <div id="proj-progress"></div>
+    <div id="proj-announcements" class="announcement-panel">
+      <h3>📢 Announcements</h3>
+      <div id="proj-announcement-list" class="announcement-list"></div>
+    </div>
+    <!-- Projector emergency meeting button (only visible during running phase) -->
+    <div id="proj-meeting-btn-container" class="hidden">
+      <button id="proj-call-meeting-btn" class="btn-danger proj-meeting-btn">🚨 Emergency Meeting</button>
+    </div>
+    <!-- Projector meeting display -->
+    <div id="proj-meeting-area" class="hidden">
+      <div id="proj-meeting-header"></div>
+      <div id="proj-arrival-list"></div>
+      <div id="proj-voting-timer"></div>
+      <div id="proj-vote-status"></div>
+      <div id="proj-results"></div>
+    </div>
+  </div>
+
+  <!-- ── Game Over ── -->
+  <div id="game-over" class="section hidden">
+    <div id="game-over-content"></div>
+    <div id="host-gameover-controls" class="hidden">
+      <div class="button-row" style="justify-content:center">
+        <button id="play-again-btn" class="btn-primary">🔄 Play Again</button>
+        <button id="end-session-btn-3" class="btn-danger">✖ End Lobby</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
