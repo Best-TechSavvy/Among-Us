@@ -312,6 +312,15 @@ function resolveMeeting() {
   return result;
 }
 
+// Host marks a player as dead (physical elimination in real life)
+function markPlayerDead(playerId) {
+  const player = gameState.players.find(p => p.playerId === playerId);
+  if (!player) return { success: false, message: 'Player not found' };
+  if (!player.alive) return { success: false, message: 'Player is already dead' };
+  player.alive = false;
+  return { success: true, player };
+}
+
 // ── WIN CONDITIONS ────────────────────────────────────────────────────────────
 function checkWinCondition() {
   if (gameState.phase !== 'running') return null;
@@ -451,6 +460,7 @@ module.exports = {
   joinLobby, rejoinSession, hostReconnect, kickPlayer, updateSettings,
   createTask, editTask, deleteTask, getTaskBank,
   startGame, endGame, endSession, submitTaskCode,
+  markPlayerDead,
   callMeeting, confirmArrival, startVoting, castVote, tallyVotes, resolveMeeting,
   checkWinCondition,
   getPlayerBySocket, getHostBySocket, getProjectorBySocket,

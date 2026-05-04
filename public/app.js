@@ -209,9 +209,13 @@ function renderTaskBank(taskBank) {
     <li>
       <strong>${t.title}</strong>${!t.active ? ' <em style="color:#888">(inactive)</em>' : ''}
       <div style="font-size:0.85em;color:#aaa;margin:4px 0">${t.instructions}</div>
-      <div style="font-size:0.85em;color:#888">Code: <code>${t.completionCode||'(none)'}</code></div>
-      <button data-task-action="edit" data-task-id="${t.taskId}" style="background:#0f3460">Edit</button>
-      <button data-task-action="delete" data-task-id="${t.taskId}" style="background:#555">Delete</button>
+      <div style="margin-top:6px;padding:4px 8px;background:#1a1a2e;border-radius:6px;font-size:0.9em">
+        🔑 Code: <code style="color:#ffd166;font-size:1.1em;letter-spacing:1px">${t.completionCode||'(none)'}</code>
+      </div>
+      <div style="margin-top:6px">
+        <button data-task-action="edit" data-task-id="${t.taskId}" style="background:#0f3460">Edit</button>
+        <button data-task-action="delete" data-task-id="${t.taskId}" style="background:#555">Delete</button>
+      </div>
     </li>`).join('') + '</ul>';
 }
 
@@ -250,22 +254,31 @@ function updateHostOverview(state) {
         <button data-action="kick" data-player-id="${p.playerId}" style="background:#555">Kick</button>
       </li>`).join('')}
     </ul>`;
-  if (state.taskBank) renderTaskBank(state.taskBank);
+  // Always render full task bank with title, description, and completion code
+  if (state.taskBank && state.taskBank.length) renderTaskBank(state.taskBank);
 }
 
 function updateHostGameOverview(state) {
   if (!state || !hostGameOverviewDiv) return;
   hostGameOverviewDiv.innerHTML = `<h4>Player Status</h4>
     <table>
-      <tr><th>Name</th><th>Role</th><th>Status</th><th>Tasks</th><th>Conn</th></tr>
+      <tr><th>Name</th><th>Role</th><th>Status</th><th>Tasks</th><th>Conn</th><th>Action</th></tr>
       ${state.players.map(p => `<tr>
         <td>${p.name}</td>
         <td style="color:${p.role==='imposter'?'#e94560':'#06d6a0'}">${p.role||'—'}</td>
-        <td>${p.alive?'✅':'💀'}</td>
+        <td>${p.alive?'✅ Alive':'💀 Dead'}</td>
         <td>${p.totalTasks>0?`${p.completedTasks}/${p.totalTasks}`:'—'}</td>
         <td>${p.connected?'🟢':'🔴'}</td>
+        <td>${p.alive ? `<button data-action="kill" data-player-id="${p.playerId}" style="background:#c1121f;padding:3px 8px;font-size:0.8em">💀 Eliminate</button>` : '—'}</td>
       </tr>`).join('')}
     </table>`;
+
+  // Delegation for Eliminate button
+  hostGameOverviewDiv.querySelectorAll('button[data-action="kill"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      socket.emit('markPlayerDead', { playerId: btn.getAttribute('data-player-id') });
+    });
+  });
 }
 
 function handleTaskButtonClick(event) {
@@ -667,8 +680,6 @@ playersListDiv.addEventListener('click', e => {
 
 // Report body
 reportBtn.addEventListener('click', () => {
-  // Get latest player list from DOM state
-  socket.emit('getPlayers'); // we'll open modal on response — handled via stored state
   openReportModal(window._lastPlayers || []);
 });
 reportCancelBtn.addEventListener('click', () => reportModal.classList.add('hidden'));
@@ -837,9 +848,14 @@ socket.on('updateHostTaskOverview', (state) => { updateHostOverview(state); upda
 
 socket.on('announcementList', (data) => renderAnnouncements(data.announcements || []));
 socket.on('announcementPosted', (msg) => {
-  renderAnnouncement(msg, announcementListDiv);
-  renderAnnouncement(msg, announcementListGameDiv);
-  if (isProjector) renderAnnouncement(msg, projAnnouncementList);
+  // Render into both lobby and game announcement panels for non-projector clients
+  if (!isProjector) {
+    renderAnnouncement(msg, announcementListDiv);
+    renderAnnouncement(msg, announcementListGameDiv);
+  } else {
+    // Projector only has one announcement list
+    renderAnnouncement(msg, projAnnouncementList);
+  }
 });
 
 // ── Meeting events ────────────────────────────────────────────────────────────
@@ -852,16 +868,18 @@ socket.on('meetingCalled', (data) => {
     projPhaseBanner.className = 'proj-phase-banner phase-meeting';
     return;
   }
-  if (isHost) return; // host stays in game view, sees meeting via hostState
+  // Both host and players see the gathering phase (host sees Start Voting button via isHost check inside showGatheringPhase)
   showGatheringPhase(data);
 });
 
 socket.on('arrivalUpdated', (data) => {
   window._lastPlayers = data.players;
-  // Player view
-  if (!isProjector && !isHost) renderArrivalChecklist(data.arrivedPlayerIds, data.players);
-  // Projector view
-  if (isProjector) renderProjectorArrivalList(data.arrivedPlayerIds, data.players);
+  if (isProjector) {
+    renderProjectorArrivalList(data.arrivedPlayerIds, data.players);
+  } else {
+    // Both host and players see the checklist update on the meeting screen
+    renderArrivalChecklist(data.arrivedPlayerIds, data.players);
+  }
 });
 
 socket.on('votingStarted', (data) => {
@@ -872,7 +890,7 @@ socket.on('votingStarted', (data) => {
     startProjectorTimer(data.votingEndsAt);
     return;
   }
-  if (isHost) return;
+  // Host and players both transition to voting phase
   showVotingPhase(data.votingEndsAt, window._lastPlayers || [], myVote);
 });
 
@@ -903,7 +921,7 @@ socket.on('meetingResolved', (data) => {
     }, 6000);
     return;
   }
-  if (isHost) return;
+  // Both host and players see results, then auto-return to game
   showMeetingResults(data);
 });
 

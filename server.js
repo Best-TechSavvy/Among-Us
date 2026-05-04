@@ -16,6 +16,7 @@ const {
   createTask, editTask, deleteTask, getTaskBank,
   startGame, endGame, endSession,
   submitTaskCode,
+  markPlayerDead,
   callMeeting, confirmArrival, startVoting, castVote, tallyVotes, resolveMeeting,
   checkWinCondition,
   getPlayerBySocket, getHostBySocket, getProjectorBySocket,
@@ -249,8 +250,8 @@ io.on('connection', (socket) => {
     if (!text) { socket.emit('error', 'Announcement text is required'); return; }
     const announcement = { text, timestamp: Date.now(), senderLabel: 'HOST' };
     announcements.push(announcement);
+    // broadcastToRoom covers everyone in the room including the projector — no separate emitToProjector needed
     broadcastToRoom('announcementPosted', announcement);
-    emitToProjector('announcementPosted', announcement);
   });
 
   // ── Task submission ───────────────────────────────────────────────────────
@@ -285,8 +286,8 @@ io.on('connection', (socket) => {
       arrivedPlayerIds: [],
       players: getPublicPlayers()
     };
+    // broadcastToRoom covers projector too since projector joined the room
     broadcastToRoom('meetingCalled', meetingPayload);
-    emitToProjector('meetingCalled', meetingPayload);
     emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
   });
 
@@ -296,6 +297,11 @@ io.on('connection', (socket) => {
     const result = callMeeting('projector', 'projector', null);
     if (!result.success) { socket.emit('error', result.message); return; }
 
+    // Announcement — broadcastToRoom includes projector since it joined the room
+    const announcement = { text: '🚨 Emergency meeting called!', timestamp: Date.now(), senderLabel: 'SYSTEM' };
+    announcements.push(announcement);
+    broadcastToRoom('announcementPosted', announcement);
+
     const meetingPayload = {
       calledByName: 'Projector (Emergency)',
       callerType: 'projector',
@@ -303,8 +309,8 @@ io.on('connection', (socket) => {
       arrivedPlayerIds: [],
       players: getPublicPlayers()
     };
+    // broadcastToRoom covers projector too since it joined the room
     broadcastToRoom('meetingCalled', meetingPayload);
-    emitToProjector('meetingCalled', meetingPayload);
     emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
   });
 
@@ -316,7 +322,6 @@ io.on('connection', (socket) => {
     if (!result.success) { socket.emit('error', result.message); return; }
 
     broadcastToRoom('arrivalUpdated', { arrivedPlayerIds: result.arrivedPlayerIds, players: getPublicPlayers() });
-    emitToProjector('arrivalUpdated', { arrivedPlayerIds: result.arrivedPlayerIds, players: getPublicPlayers() });
     emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
   });
 
@@ -423,6 +428,19 @@ io.on('connection', (socket) => {
     broadcastToRoom('playersUpdated', { players: getPublicPlayers() });
     emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
     emitToProjector('projectorState', getGameStateForProjector());
+  });
+
+  // Host marks a player as dead in real life
+  socket.on('markPlayerDead', (data) => {
+    if (!isAuthorizedHost(socket)) { socket.emit('error', 'Only host can mark players as dead'); return; }
+    const { playerId } = data;
+    const result = markPlayerDead(playerId);
+    if (!result.success) { socket.emit('error', result.message); return; }
+    // Tell everyone the player list changed (alive status updated)
+    broadcastToRoom('playersUpdated', { players: getPublicPlayers() });
+    emitToProjector('projectorState', getGameStateForProjector());
+    emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
+    checkAndHandleWin();
   });
 
   // ── Disconnect ────────────────────────────────────────────────────────────
