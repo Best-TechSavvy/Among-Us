@@ -270,23 +270,35 @@ io.on('connection', (socket) => {
 
   // ── Meeting flow ──────────────────────────────────────────────────────────
 
-  // Player reports a dead body → triggers gathering phase
+  // Player reports a dead body → must be a dead player, triggers announcement + gathering phase
   socket.on('reportBody', (data) => {
     const player = getPlayerBySocket(socket.id);
     if (!player) { socket.emit('error', 'Player not found'); return; }
+    if (!player.alive) { socket.emit('error', 'Dead players cannot report'); return; }
+
     const { reportedPlayerId } = data;
+    const reportedDead = gameState.players.find(p => p.playerId === reportedPlayerId);
+    if (!reportedDead) { socket.emit('error', 'Player not found'); return; }
+
     const result = callMeeting(player.playerId, 'player', reportedPlayerId);
     if (!result.success) { socket.emit('error', result.message); return; }
 
-    const reportedDead = gameState.players.find(p => p.playerId === reportedPlayerId);
+    // Public announcement — everyone sees who reported
+    const announcement = {
+      text: `🔴 ${player.name} reported a dead body (${reportedDead.name})!`,
+      timestamp: Date.now(),
+      senderLabel: 'SYSTEM'
+    };
+    announcements.push(announcement);
+    broadcastToRoom('announcementPosted', announcement);
+
     const meetingPayload = {
       calledByName: player.name,
       callerType: 'player',
-      reportedDeadName: reportedDead ? reportedDead.name : null,
+      reportedDeadName: reportedDead.name,
       arrivedPlayerIds: [],
       players: getPublicPlayers()
     };
-    // broadcastToRoom covers projector too since projector joined the room
     broadcastToRoom('meetingCalled', meetingPayload);
     emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
   });
@@ -406,6 +418,7 @@ io.on('connection', (socket) => {
       if (room) {
         [...room].forEach(sid => {
           if (sid === hostSocketId) return;
+          if (sid === gameState.projector.socketId) return; // keep projector connected
           const s = io.sockets.sockets.get(sid);
           if (s) s.disconnect(true);
         });
@@ -428,6 +441,20 @@ io.on('connection', (socket) => {
     broadcastToRoom('playersUpdated', { players: getPublicPlayers() });
     emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
     emitToProjector('projectorState', getGameStateForProjector());
+  });
+
+  // Player silently reports themselves as eliminated (host-only notification)
+  socket.on('selfEliminated', () => {
+    const player = getPlayerBySocket(socket.id);
+    if (!player) return;
+    if (!player.alive) return;
+    const result = markPlayerDead(player.playerId);
+    if (!result.success) return;
+    // Confirm to the player their status changed
+    socket.emit('selfEliminatedAck', { name: player.name });
+    // Only tell the host — no broadcast to room, no projector update
+    emitToHost('playerSelfEliminated', { playerId: player.playerId, name: player.name });
+    emitToHost('hostState', getGameStateForHost(gameState.host.socketId));
   });
 
   // Host marks a player as dead in real life

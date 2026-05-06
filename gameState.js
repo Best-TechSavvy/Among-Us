@@ -212,7 +212,7 @@ function callMeeting(callerId, callerType, reportedDeadId) {
     if (reportedDeadId) {
       const dead = gameState.players.find(p => p.playerId === reportedDeadId);
       if (!dead) return { success: false, message: 'Reported player not found' };
-      if (dead.alive) return { success: false, message: 'That player is not dead' };
+      // No alive check — host controls who is dead via markPlayerDead
     }
   }
   gameState.phase = 'meeting';

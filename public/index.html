@@ -38,12 +38,11 @@
     <div id="players-list"></div>
     <div id="global-progress-lobby" class="hidden progress-bar-container"></div>
 
-    <div class="announcement-panel">
+    <!-- Announcements panel (players + non-host view) -->
+    <div id="announcement-panel-lobby" class="announcement-panel">
       <h3>📢 Announcements</h3>
       <div id="announcement-list" class="announcement-list"></div>
     </div>
-
-    <div id="host-overview" class="hidden"></div>
 
     <div id="host-controls" class="hidden">
       <h3>⚙️ Settings</h3>
@@ -61,6 +60,16 @@
 
       <div id="projector-token-display"></div>
 
+      <!-- Announcements + posting together for host -->
+      <div class="announcement-panel" style="margin-top:16px">
+        <h3>📢 Announcements</h3>
+        <div id="announcement-list-host" class="announcement-list"></div>
+        <div style="margin-top:8px">
+          <textarea id="announcement-text" placeholder="Announcement text" maxlength="200" rows="2"></textarea><br>
+          <button id="announcement-send-btn">📣 Send Announcement</button>
+        </div>
+      </div>
+
       <h3>📋 Task Bank</h3>
       <div id="task-bank-list"></div>
       <h4>Create New Task</h4>
@@ -69,9 +78,7 @@
       <input type="text" id="task-code" placeholder="Completion Code" maxlength="20"><br>
       <button id="create-task-btn">+ Create Task</button>
 
-      <h4>📣 Post Announcement</h4>
-      <textarea id="announcement-text" placeholder="Announcement text" maxlength="200" rows="2"></textarea><br>
-      <button id="announcement-send-btn">Send</button>
+      <div id="host-overview"></div>
     </div>
   </div>
 
@@ -87,6 +94,11 @@
       <button id="report-btn" class="btn-danger">🔴 Report Dead Body</button>
     </div>
 
+    <!-- Self-elimination report: shown to crewmates only, silent to others -->
+    <div id="self-eliminated-container" class="hidden">
+      <button id="self-eliminated-btn" class="btn-skip">💀 I Was Eliminated</button>
+    </div>
+
     <div class="announcement-panel">
       <h3>📢 Announcements</h3>
       <div id="announcement-list-game" class="announcement-list"></div>
@@ -98,7 +110,22 @@
         <button id="end-game-btn-2" class="btn-danger">⏹ End Game</button>
         <button id="end-session-btn-2" class="btn-danger">✖ End Lobby</button>
       </div>
+
+      <!-- Announcements + posting for host in-game -->
+      <div class="announcement-panel" style="margin-top:8px">
+        <h3>📢 Announcements</h3>
+        <div id="announcement-list-host-game" class="announcement-list"></div>
+        <div style="margin-top:8px">
+          <textarea id="announcement-text-game" placeholder="Announcement text" maxlength="200" rows="2"></textarea><br>
+          <button id="announcement-send-btn-game">📣 Send Announcement</button>
+        </div>
+      </div>
+
       <div id="host-game-overview"></div>
+
+      <!-- Task bank always visible for host during game -->
+      <h3>📋 Task Bank</h3>
+      <div id="task-bank-list-game"></div>
     </div>
   </div>
 
